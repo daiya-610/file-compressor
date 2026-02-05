@@ -5,6 +5,7 @@ import fs from "fs";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
+import { promisify } from "util";
 
 const app = express();
 app.use(cors());
@@ -25,7 +26,7 @@ const upload = multer({
   limits: { fileSize: 200 * 1024 * 1024 }, // 200MBまで許可
 });
 
-app.post("/compress-pdf", upload.single("file"), (req, res) => {
+app.post("/compress-pdf", upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).send("ファイルがアップロードされませんでした。");
   }
@@ -35,28 +36,29 @@ app.post("/compress-pdf", upload.single("file"), (req, res) => {
   // Ghostscriptコマンド： テキストを保持しつつ、画像をダウンサンプリングして圧縮
   // -dPDFSETTINGS=/ebook (150dpi相当) がバランス良い。
   // より圧縮したい場合は /screen (72dpi相当) を使用する。だが画質がかなり落ちる。
-  const gsCommand = `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outputPath}" "${inputPath}"`;
+  const gsCommand = `gs -sDEVICE=pdfwrite -dNumRenderingThreads=4 -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outputPath}" "${inputPath}"`;
 
-  console.log("圧縮を開始します。");
+  const execPromise = promisify(exec);
+  try {
+    console.log("圧縮を開始します。");
+    await execPromise(gsCommand);
+    console.log("圧縮が完了しました。");
+  } catch (error) {
+    console.error(`実行エラー： ${error}`);
+    if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+    return res.status(500).send("圧縮に失敗しました。");
+  }
 
-  exec(gsCommand, (error) => {
-    if (error) {
-      console.error(`実行エラー： ${error}`);
+  // 圧縮されたファイルをクライアントに送信
+  res.download(outputPath, "compressed.pdf", () => {
+    try {
+      // 完了後にファイルを安全に削除
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
-      return res.status(500).send("圧縮に失敗しました。");
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+      console.log("処理完了・ファイル削除済み");
+    } catch (e) {
+      console.error("ファイル削除エラー:", e);
     }
-
-    // 圧縮されたファイルをクライアントに送信
-    res.download(outputPath, "compressed.pdf", () => {
-      try {
-        // 完了後にファイルを安全に削除
-        if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
-        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-        console.log("処理完了・ファイル削除済み");
-      } catch (e) {
-        console.error("ファイル削除エラー:", e);
-      }
-    });
   });
 });
 
