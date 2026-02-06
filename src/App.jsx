@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
 function App() {
@@ -7,6 +7,20 @@ function App() {
   const [status, setStatus] = useState('');
   const [quality, setQuality] = useState('ebook');
   const [progress, setProgress] = useState(0);
+
+  // サーバー圧縮中のジワジワ進むアニメーション
+  useEffect(() => {
+    let interval;
+    if (loading && progress >= 50 && progress < 95) {
+      interval = setInterval(() => {
+        setProgress((prev) => {
+          if (prev < 95) return prev + 1; 
+          return prev;
+        });
+      }, 1000); // 1秒ごとに1%進める
+    }
+    return () => clearInterval(interval);
+  }, [loading, progress]);
 
   const handleDownload = async () => {
     if (!file) return;
@@ -23,31 +37,35 @@ function App() {
       const response = await axios.post(`http://localhost:5001/compress-pdf?quality=${quality}`, formData, {
         responseType: 'blob',
         onUploadProgress: (progressEvent) => {
-          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setProgress(percentCompleted);
-          if (percentCompleted < 100) {
-            setStatus(`1.ファイルをアップロード中... ${percentCompleted}%`);
+          const percentProgress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          // アップロード分を全体の50%として計算
+          const totalMappedProgress = Math.round(percentProgress * 0.5);
+          setProgress(totalMappedProgress);
+          if (percentProgress < 100) {
+            setStatus(`[1/5]ファイルをアップロード中... ${percentProgress}%`);
           } else {
-            setStatus('2.サーバーで圧縮処理中... (このまましばらくお待ちください)');
+            setStatus(`[2/5]サーバーで圧縮処理中(このまましばらくお待ちください... ${percentProgress}%)`);
           }
         }
       });
-      setStatus('3. 圧縮完了。ダウンロードします...');
+      setStatus('[3/5] 圧縮中...');
       // レスポンスをBlobとして受け取り、ダウンロードさせる
       const url = URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
       link.download = `compressed_${file.name}`;
       link.click();
+      setStatus('[4/5] ダウンロード中...');
       // メモリ解放
       URL.revokeObjectURL(url);
+      setProgress(100);
 
-      setStatus('ダウンロード完了しました。');
+      setStatus('【5/5】すべての工程が完了しました！');
     } catch (error) {
       console.error('圧縮エラー:', error);
       alert(`ファイルの圧縮に失敗しました。設定値を調整してください。：${error.message}`);
-      alert(`失敗しました：${error.message}`);
       setStatus('エラーが発生しました。');
+      setProgress(0);
     } finally {
       setLoading(false);
     }
@@ -85,6 +103,9 @@ function App() {
       </button>
       {loading && (
         <div style={{ marginTop: '20px' }}>
+          <div style={{ marginBottom: '8px', fontSize: '1.2rem', fontWeight: 'bold', color: '#007bff' }}>
+            {progress}%
+          </div>
           <div style={{ width: '100%', backgroundColor: '#e0e0e0', borderRadius: '10px', height: '20px' }}>
             <div style={{
               width: `${progress}%`,
