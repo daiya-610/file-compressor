@@ -40,7 +40,20 @@ app.post("/compress-pdf", upload.single("file"), async (req, res) => {
   // Ghostscriptコマンド： テキストを保持しつつ、画像をダウンサンプリングして圧縮
   // -dPDFSETTINGS=/ebook (150dpi相当) がバランス良い。
   // 例：解像度を110dpi（ebookとscreenの中間）に設定し、JPEG品質を上げる
-  const gsCommand = `gs -sDEVICE=pdfwrite -dNumRenderingThreads=4 -dCompatibilityLevel=1.4 -dPDFSETTINGS=/${settings} -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outputPath}" "${inputPath}"`;
+  const gsCommand = `gs -sDEVICE=pdfwrite \
+  -dNumRenderingThreads=8 \
+  -dCompatibilityLevel=1.4 \
+  -dPDFSETTINGS=/${settings} \
+  -dColorImageFilter=/DCTEncode \
+  -dGrayImageFilter=/DCTEncode \
+  -dDownsampleColorImages=true \
+  -dDownsampleGrayImages=true \
+  -dDownsampleMonoImages=true \
+  -dDoThumbnails=false \
+  -dCreateJobTicket=false \
+  -dPreserveInfo=false \
+  -dNOPAUSE -dQUIET -dBATCH \
+  -sOutputFile="${outputPath}" "${inputPath}"`;
 
   console.log(`設定:${settings}で圧縮開始`);
 
